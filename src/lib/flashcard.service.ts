@@ -2,6 +2,7 @@ import type { SupabaseClient } from "../db/supabase.client";
 import type {
   CreateFlashcardCommand,
   CreateFlashcardsResponseDTO,
+  FlashcardDetailDTO,
   FlashcardInsertEntity,
   GetFlashcardsResponseDTO,
 } from "../types";
@@ -178,6 +179,43 @@ export class FlashcardService {
         total,
       },
     };
+  }
+
+  /**
+   * Retrieves a single flashcard by ID for a specific user.
+   * Verifies that the flashcard exists and belongs to the authenticated user.
+   * Returns flashcard data in FlashcardDetailDTO format (excluding user_id).
+   *
+   * @param flashcardId - ID of the flashcard to retrieve
+   * @param userId - Authenticated user ID for authorization
+   * @returns Promise with flashcard detail data
+   * @throws Error if flashcard doesn't exist or doesn't belong to user
+   */
+  async getFlashcardById(flashcardId: number, userId: string): Promise<FlashcardDetailDTO> {
+    // Build query with filters for both id and user_id
+    const { data: flashcard, error } = await this.supabase
+      .from("flashcards")
+      .select("id, front, back, source, created_at, updated_at, generation_id")
+      .eq("id", flashcardId)
+      .eq("user_id", userId)
+      .single();
+
+    // Handle database errors
+    if (error) {
+      // Check if it's a "not found" error (PGRST116 is Supabase's code for no rows returned)
+      if (error.code === "PGRST116" || error.message.includes("No rows returned")) {
+        throw new Error(`Flashcard with ID ${flashcardId} not found`);
+      }
+      throw new Error(`Failed to fetch flashcard: ${error.message}`);
+    }
+
+    // Additional check: if data is null, treat as not found
+    if (!flashcard) {
+      throw new Error(`Flashcard with ID ${flashcardId} not found`);
+    }
+
+    // Return flashcard data (user_id is already excluded from select)
+    return flashcard;
   }
 
   /**
