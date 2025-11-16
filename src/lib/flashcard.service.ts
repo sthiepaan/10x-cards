@@ -5,6 +5,8 @@ import type {
   FlashcardDetailDTO,
   FlashcardInsertEntity,
   GetFlashcardsResponseDTO,
+  UpdateFlashcardCommand,
+  UpdateFlashcardResponseDTO,
 } from "../types";
 
 /**
@@ -216,6 +218,103 @@ export class FlashcardService {
 
     // Return flashcard data (user_id is already excluded from select)
     return flashcard;
+  }
+
+  /**
+   * Updates an existing flashcard by ID.
+   * Verifies that the flashcard exists and belongs to the authenticated user,
+   * validates update data, and performs the update operation.
+   *
+   * @param flashcardId - ID of the flashcard to update
+   * @param userId - Authenticated user ID for authorization
+   * @param updateData - Data to update (front, back, source - all optional but at least one required)
+   * @returns Promise with updated flashcard data in FlashcardDetailDTO format
+   * @throws Error if flashcard doesn't exist, doesn't belong to user, or validation fails
+   */
+  async updateFlashcardById(
+    flashcardId: number,
+    userId: string,
+    updateData: UpdateFlashcardCommand
+  ): Promise<UpdateFlashcardResponseDTO> {
+    // Verify flashcard exists and belongs to user
+    await this.getFlashcardById(flashcardId, userId);
+
+    // Validate update data
+    this.validateUpdateData(updateData);
+
+    // Prepare update payload (only include fields that are provided)
+    const updatePayload: Record<string, string> = {};
+    if (updateData.front !== undefined) {
+      updatePayload.front = updateData.front;
+    }
+    if (updateData.back !== undefined) {
+      updatePayload.back = updateData.back;
+    }
+    if (updateData.source !== undefined) {
+      updatePayload.source = updateData.source;
+    }
+
+    // Perform update with filtering by id and user_id
+    const { data: updatedFlashcard, error } = await this.supabase
+      .from("flashcards")
+      .update(updatePayload)
+      .eq("id", flashcardId)
+      .eq("user_id", userId)
+      .select("id, front, back, source, created_at, updated_at, generation_id")
+      .single();
+
+    // Handle database errors
+    if (error) {
+      throw new Error(`Failed to update flashcard: ${error.message}`);
+    }
+
+    // Additional check: if data is null, treat as not found
+    if (!updatedFlashcard) {
+      throw new Error(`Flashcard with ID ${flashcardId} not found`);
+    }
+
+    // Return updated flashcard data (user_id is already excluded from select)
+    return updatedFlashcard;
+  }
+
+  /**
+   * Validates update data for flashcard updates.
+   * Ensures at least one field is provided and validates field constraints.
+   *
+   * @param updateData - Update data to validate
+   * @throws Error if validation fails
+   */
+  private validateUpdateData(updateData: UpdateFlashcardCommand): void {
+    // Check that at least one field is provided
+    if (
+      updateData.front === undefined &&
+      updateData.back === undefined &&
+      updateData.source === undefined
+    ) {
+      throw new Error("At least one field (front, back, source) must be provided for update");
+    }
+
+    // Validate front field length if provided
+    if (updateData.front !== undefined) {
+      if (updateData.front.length > 200) {
+        throw new Error("Front text cannot exceed 200 characters");
+      }
+    }
+
+    // Validate back field length if provided
+    if (updateData.back !== undefined) {
+      if (updateData.back.length > 500) {
+        throw new Error("Back text cannot exceed 500 characters");
+      }
+    }
+
+    // Validate source value if provided
+    if (updateData.source !== undefined) {
+      const validSources = ["ai-edited", "manual"];
+      if (!validSources.includes(updateData.source)) {
+        throw new Error(`Source must be one of: ${validSources.join(", ")}`);
+      }
+    }
   }
 
   /**
