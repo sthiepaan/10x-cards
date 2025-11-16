@@ -1,6 +1,11 @@
 import { createHash } from "crypto";
 import type { SupabaseClient } from "../db/supabase.client";
-import type { GenerationInsertEntity, GenerationErrorLogEntity, FlashcardProposalDTO } from "../types";
+import type {
+  GenerationInsertEntity,
+  GenerationErrorLogEntity,
+  FlashcardProposalDTO,
+  GetGenerationsResponseDTO,
+} from "../types";
 
 /**
  * Service for handling flashcard generation using AI.
@@ -153,6 +158,62 @@ export class GenerationService {
       // eslint-disable-next-line no-console
       console.error("Failed to log generation error:", logError);
     }
+  }
+
+  /**
+   * Retrieves a paginated, sorted list of generation records for a user.
+   * Supports sorting by various fields and pagination with total count.
+   *
+   * @param userId - Authenticated user ID
+   * @param page - Page number (default: 1)
+   * @param limit - Number of results per page (default: 10)
+   * @param sort - Field to sort by (default: 'created_at')
+   * @param order - Sort direction 'asc' or 'desc' (default: 'desc')
+   * @returns Promise with paginated generations data
+   * @throws Error if database query fails
+   */
+  async getGenerations(
+    userId: string,
+    page = 1,
+    limit = 10,
+    sort = "created_at",
+    order: "asc" | "desc" = "desc"
+  ): Promise<GetGenerationsResponseDTO> {
+    // Build base query with user filter
+    // Select all fields except user_id to match GenerationDTO
+    let query = this.supabase
+      .from("generations")
+      .select(
+        "id, model, generated_count, accepted_unedited_count, accepted_edited_count, source_text_hash, source_text_length, generation_duration, created_at, updated_at",
+        { count: "exact" }
+      )
+      .eq("user_id", userId);
+
+    // Apply sorting
+    query = query.order(sort, { ascending: order === "asc" });
+
+    // Apply pagination
+    const from = (page - 1) * limit;
+    query = query.range(from, from + limit - 1);
+
+    // Execute query
+    const { data: generations, error, count } = await query;
+
+    if (error) {
+      throw new Error(`Failed to fetch generations: ${error.message}`);
+    }
+
+    // Calculate total and ensure count is not null
+    const total = count ?? 0;
+
+    return {
+      data: generations || [],
+      pagination: {
+        page,
+        limit,
+        total,
+      },
+    };
   }
 
   /**

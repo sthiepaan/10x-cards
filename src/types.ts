@@ -87,7 +87,7 @@ export type GenerationDTO = Omit<GenerationEntity, "user_id">;
 
 export interface GetGenerationsResponseDTO {
   data: GenerationDTO[];
-  // Optionally add pagination later if needed by the UI
+  pagination: PaginationDTO;
 }
 
 export interface GetGenerationDetailResponseDTO {
