@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "../db/supabase.client";
-import type { CreateFlashcardCommand, CreateFlashcardsResponseDTO, FlashcardInsertEntity } from "../types";
+import type {
+  CreateFlashcardCommand,
+  CreateFlashcardsResponseDTO,
+  FlashcardInsertEntity,
+  GetFlashcardsResponseDTO,
+} from "../types";
 
 /**
  * Service for handling flashcard operations.
@@ -107,6 +112,72 @@ export class FlashcardService {
         await this.validateGenerationOwnership(flashcard.generation_id, userId);
       }
     }
+  }
+
+  /**
+   * Retrieves a paginated, filtered, and sorted list of flashcards for a user.
+   * Supports filtering by source and generation_id, sorting by various fields,
+   * and pagination with total count.
+   *
+   * @param userId - Authenticated user ID
+   * @param page - Page number (default: 1)
+   * @param limit - Number of results per page (default: 10)
+   * @param sort - Field to sort by (default: 'created_at')
+   * @param order - Sort direction 'asc' or 'desc' (default: 'desc')
+   * @param source - Optional filter by source ('ai-full', 'ai-edited', 'manual')
+   * @param generationId - Optional filter by generation ID
+   * @returns Promise with paginated flashcards data
+   * @throws Error if database query fails
+   */
+  async getFlashcards(
+    userId: string,
+    page = 1,
+    limit = 10,
+    sort = "created_at",
+    order: "asc" | "desc" = "desc",
+    source?: string,
+    generationId?: number
+  ): Promise<GetFlashcardsResponseDTO> {
+    // Build base query with user filter
+    let query = this.supabase
+      .from("flashcards")
+      .select("id, front, back, source, created_at, updated_at", { count: "exact" })
+      .eq("user_id", userId);
+
+    // Apply optional filters
+    if (source) {
+      query = query.eq("source", source);
+    }
+
+    if (generationId !== undefined) {
+      query = query.eq("generation_id", generationId);
+    }
+
+    // Apply sorting
+    query = query.order(sort, { ascending: order === "asc" });
+
+    // Apply pagination
+    const from = (page - 1) * limit;
+    query = query.range(from, from + limit - 1);
+
+    // Execute query
+    const { data: flashcards, error, count } = await query;
+
+    if (error) {
+      throw new Error(`Failed to fetch flashcards: ${error.message}`);
+    }
+
+    // Calculate total pages and ensure count is not null
+    const total = count ?? 0;
+
+    return {
+      data: flashcards || [],
+      pagination: {
+        page,
+        limit,
+        total,
+      },
+    };
   }
 
   /**
