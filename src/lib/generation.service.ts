@@ -5,6 +5,7 @@ import type {
   GenerationErrorLogEntity,
   FlashcardProposalDTO,
   GetGenerationsResponseDTO,
+  GetGenerationDetailResponseDTO,
 } from "../types";
 
 /**
@@ -213,6 +214,62 @@ export class GenerationService {
         limit,
         total,
       },
+    };
+  }
+
+  /**
+   * Retrieves detailed information about a single generation by ID.
+   * Returns generation metadata and all associated flashcards.
+   *
+   * @param generationId - ID of the generation to retrieve
+   * @param userId - Authenticated user ID for authorization
+   * @returns Promise with generation detail data including flashcards
+   * @throws Error if generation not found or database query fails
+   */
+  async getGenerationById(generationId: number, userId: string): Promise<GetGenerationDetailResponseDTO> {
+    // Build query for generation with user filter
+    // Select all fields except user_id to match GenerationDTO
+    const { data: generation, error: generationError } = await this.supabase
+      .from("generations")
+      .select(
+        "id, model, generated_count, accepted_unedited_count, accepted_edited_count, source_text_hash, source_text_length, generation_duration, created_at, updated_at"
+      )
+      .eq("id", generationId)
+      .eq("user_id", userId)
+      .single();
+
+    // Handle database errors
+    if (generationError) {
+      // Check if it's a "not found" error (PGRST116 is Supabase's code for no rows returned)
+      if (generationError.code === "PGRST116" || generationError.message.includes("No rows returned")) {
+        throw new Error(`Generation with ID ${generationId} not found`);
+      }
+      throw new Error(`Failed to fetch generation: ${generationError.message}`);
+    }
+
+    // Additional check: if data is null, treat as not found
+    if (!generation) {
+      throw new Error(`Generation with ID ${generationId} not found`);
+    }
+
+    // Fetch all flashcards associated with this generation
+    // Filter by both generation_id and user_id for security
+    const { data: flashcards, error: flashcardsError } = await this.supabase
+      .from("flashcards")
+      .select("id, front, back, source, created_at, updated_at, generation_id")
+      .eq("generation_id", generationId)
+      .eq("user_id", userId);
+
+    // Handle database errors for flashcards query
+    if (flashcardsError) {
+      throw new Error(`Failed to fetch flashcards: ${flashcardsError.message}`);
+    }
+
+    // Return generation detail with flashcards
+    // user_id is already excluded from both queries
+    return {
+      generation,
+      flashcards: flashcards || [],
     };
   }
 
