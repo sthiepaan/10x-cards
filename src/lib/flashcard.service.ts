@@ -2,6 +2,7 @@ import type { SupabaseClient } from "../db/supabase.client";
 import type {
   CreateFlashcardCommand,
   CreateFlashcardsResponseDTO,
+  DeleteFlashcardResponseDTO,
   FlashcardDetailDTO,
   FlashcardInsertEntity,
   GetFlashcardsResponseDTO,
@@ -286,11 +287,7 @@ export class FlashcardService {
    */
   private validateUpdateData(updateData: UpdateFlashcardCommand): void {
     // Check that at least one field is provided
-    if (
-      updateData.front === undefined &&
-      updateData.back === undefined &&
-      updateData.source === undefined
-    ) {
+    if (updateData.front === undefined && updateData.back === undefined && updateData.source === undefined) {
       throw new Error("At least one field (front, back, source) must be provided for update");
     }
 
@@ -315,6 +312,47 @@ export class FlashcardService {
         throw new Error(`Source must be one of: ${validSources.join(", ")}`);
       }
     }
+  }
+
+  /**
+   * Deletes a flashcard by ID for a specific user.
+   * Verifies that the flashcard exists and belongs to the authenticated user,
+   * then performs the deletion operation.
+   *
+   * @param flashcardId - ID of the flashcard to delete
+   * @param userId - Authenticated user ID for authorization
+   * @returns Promise with deletion confirmation in DeleteFlashcardResponseDTO format
+   * @throws Error if flashcard doesn't exist, doesn't belong to user, or deletion fails
+   */
+  async deleteFlashcardById(flashcardId: number, userId: string): Promise<DeleteFlashcardResponseDTO> {
+    // Verify flashcard exists and belongs to user
+    await this.getFlashcardById(flashcardId, userId);
+
+    // Perform deletion with filtering by id and user_id
+    const { data: deletedFlashcard, error } = await this.supabase
+      .from("flashcards")
+      .delete()
+      .eq("id", flashcardId)
+      .eq("user_id", userId)
+      .select("id")
+      .single();
+
+    // Handle database errors
+    if (error) {
+      throw new Error(`Failed to delete flashcard: ${error.message}`);
+    }
+
+    // Verify that deletion was successful
+    // If deletedFlashcard is null, it means no rows were deleted
+    if (!deletedFlashcard) {
+      throw new Error(`Flashcard with ID ${flashcardId} not found`);
+    }
+
+    // Return deletion confirmation
+    return {
+      success: true,
+      id: deletedFlashcard.id,
+    };
   }
 
   /**
